@@ -7,6 +7,11 @@ human judgements behind them: which candidates were declared the same,
 different, or deferred, why, and what was compared.  Recording "different"
 keeps settled pairs from being proposed again (spec 6.4).
 
+A relation is a single *resolution pointer*: one per ``(kind, from)``
+(``UNIQUE`` constrained), not a general many-to-many edge.  Model
+many-to-many associations in your own master tables; this table answers
+"what does this record resolve to".
+
 Verdicts: ``same`` / ``different`` / ``deferred`` / ``reopen`` (clears the
 pair's current state).  The latest judgement per unordered pair wins;
 judgements themselves are append-only history.
@@ -94,7 +99,16 @@ def pair_verdicts(base, kind):
 
 def merge_relations(base, entity_type, keep, drop):
     """Repoint relations when two master records merge (used by
-    ``merge_entities``; call directly when merging outside syncbase)."""
-    base.con.execute("UPDATE relations SET to_type=to_type, to_id=? WHERE to_type=? AND to_id=?",
+    ``merge_entities``; call directly when merging outside syncbase).
+
+    Relations pointing *at* the dropped record are repointed to ``keep``.
+    Relations *from* the dropped record are repointed too, except when
+    ``keep`` already has one of the same kind — then the keep side wins and
+    the dropped record's relation is removed.  A relation that would end up
+    pointing at its own record is dropped."""
+    base.con.execute("UPDATE relations SET to_id=? WHERE to_type=? AND to_id=?",
+                     (keep, entity_type, drop))
+    base.con.execute("UPDATE OR IGNORE relations SET from_id=? WHERE from_type=? AND from_id=?",
                      (keep, entity_type, drop))
     base.con.execute("DELETE FROM relations WHERE from_type=? AND from_id=?", (entity_type, drop))
+    base.con.execute("DELETE FROM relations WHERE from_type=to_type AND from_id=to_id")

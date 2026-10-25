@@ -103,6 +103,32 @@ Re-committing the same batch is a no-op. Returns
 - `split_entity(entity_type, entity_id, link_ids, values=None, note="") -> new_id` —
   move the given `entity_links.id` rows to a newly created entity.
 
+## Relations and judgements (relations.py)
+
+Master-to-master resolution pointers and the judgement history behind
+entity resolution. A relation is **one pointer per `(kind, from)`** (not a
+general many-to-many edge); refs are `(entity_type, entity_id)` tuples.
+
+- `relate(kind, from_ref, to_ref, reason="", actor=None)` — set or
+  repoint a record's relation.
+- `unrelate(kind, from_ref)` — remove it.
+- `relation_of(kind, from_ref) -> dict | None`
+- `relations(kind, to_ref=None) -> list[dict]` — all relations of a kind,
+  optionally only those pointing at `to_ref`.
+- `judge(kind, a_ref, b_ref, verdict, reason="", compared=None, actor=None)` —
+  record a resolution judgement about an unordered pair:
+  `"same"` | `"different"` | `"deferred"` | `"reopen"` (clears the pair's
+  state). Append-only; recording `"different"` keeps settled pairs from
+  being proposed again.
+- `judgements(kind, ref=None, limit=500) -> list[dict]` — history, newest
+  first.
+- `pair_verdicts(kind) -> {frozenset({a_ref, b_ref}): (verdict, reason)}` —
+  the current state per pair (latest verdict wins, `reopen` clears).
+
+`merge_entities` repoints relations automatically (the keep side wins on a
+`(kind, from)` collision). `validate()` reports relations whose endpoints
+no longer exist.
+
 ## Provenance (provenance.py)
 
 - `provenance(entity_type, entity_id, field=None) -> list[dict]` —
