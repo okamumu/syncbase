@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "syncbase"
+version = "0.1.0"
+description = "Sync external data into a master SQLite database, git-style: three-way merge, conflict detection, change history, provenance and export tracking."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Hiroyuki Okamura" }]
+keywords = ["sqlite", "sync", "three-way-merge", "mdm", "golden-record", "versioning", "csv"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Database",
+]
+
+[tool.setuptools]
+packages = ["syncbase"]
