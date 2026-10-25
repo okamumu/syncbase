@@ -4,8 +4,8 @@
 
 First cut of the data management core (layer 2 of the specification,
 `docs/spec.ja.md`), extracted and generalized from the import pipeline of a
-conference-management system (rentai-manager), where the three-way merge
-(`_form_base` / `_person_base`) was first built and battle-tested.
+conference-management system, where the three-way merge was first built and
+battle-tested.
 
 - Three-way field merge with S0/S1/M0/M1 (S0 ≠ M0 supported), field
   policies (`auto`, `source_wins`, `master_wins`, `manual`, `protected`)

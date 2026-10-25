@@ -70,7 +70,23 @@ in **one commit**, recorded field-by-field in the change history, and the
 sync baselines (S0/M0) are advanced only at that moment. Deferred conflicts
 keep their baseline and surface again on the next import.
 
+## Master tables: yours or auto-created
+
+syncbase does not impose a schema on the master database. `entity()`
+attaches history triggers to an existing table of your own design
+(`table=` and `pk=` if the names differ; the primary key must be a single
+INTEGER column). When the table does not exist, `create=True` (the
+default) creates a simple one — INTEGER primary key, all registered
+fields as `TEXT DEFAULT ''` — and later adds missing registered fields
+with `ALTER TABLE`. If you want real types, NOT NULL or CHECK
+constraints, create the table yourself first; only the columns listed in
+`fields` are synchronized, merged and recorded in history, any others are
+left alone.
+
 ## API overview (spec chapter 8)
+
+A quick reference with signatures and return values is in
+[`docs/reference.md`](docs/reference.md).
 
 | area | methods on `Base` |
 |---|---|
@@ -121,4 +137,4 @@ design summary is in `docs/design.md`.
 
 ## License
 
-MIT (provisional — to be confirmed before publishing).
+MIT — see [LICENSE](LICENSE).
