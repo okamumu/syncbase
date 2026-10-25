@@ -89,45 +89,63 @@ def compare_versions(base, v1, v2):
     return diffs
 
 
+def _apply_inverse(base, c, force, label):
+    """Apply the inverse of one change row (helper for revert/revert_change)."""
+    e = base.entities[c["entity_type"]]
+    old = json.loads(c["old"]) if c["old"] else None
+    new = json.loads(c["new"]) if c["new"] else None
+    cur = base.row(c["entity_type"], c["entity_id"])
+    if c["op"] == "update":
+        if cur is None:
+            raise RuntimeError("row %s/%s no longer exists" % (c["entity_type"], c["entity_id"]))
+        fields = [f for f in new if old.get(f) != new.get(f) and f != e.pk]
+        stale = [f for f in fields if cur.get(f) != new.get(f)]
+        if stale and not force:
+            raise RuntimeError("values changed since %s: %s" % (label, ", ".join(stale)))
+        base.update(c["entity_type"], c["entity_id"], {f: old.get(f) for f in fields})
+    elif c["op"] == "insert":
+        if cur is None:
+            return
+        if not force and any(cur.get(f) != new.get(f) for f in new if f != e.pk):
+            raise RuntimeError("row %s/%s changed since %s"
+                               % (c["entity_type"], c["entity_id"], label))
+        base.delete(c["entity_type"], c["entity_id"])
+    elif c["op"] == "delete":
+        if cur is not None and not force:
+            raise RuntimeError("row %s/%s exists again" % (c["entity_type"], c["entity_id"]))
+        if cur is None:
+            cols = [k for k in old]
+            base.con.execute(
+                "INSERT INTO %s (%s) VALUES (%s)"
+                % (q(e.table), ", ".join(q(k) for k in cols), ", ".join("?" * len(cols))),
+                [old[k] for k in cols])
+
+
 def revert(base, commit_id, force=False, note=None):
     """Undo one commit by applying the inverse changes as a *new* commit
     (spec 4.3: never rewrite history).
 
     Refuses when a touched value has changed since, unless ``force``.
-    Returns the new commit id, or None when there was nothing to undo.
+    Returns the new commit id.
     """
     rows = _rows(base, "SELECT * FROM changes WHERE commit_id=? ORDER BY id DESC", (commit_id,))
     if not rows:
         raise KeyError("commit %s has no changes" % commit_id)
     with base.transaction(note or ("revert commit %d" % commit_id), kind="revert") as cid:
         for c in rows:
-            e = base.entities[c["entity_type"]]
-            old = json.loads(c["old"]) if c["old"] else None
-            new = json.loads(c["new"]) if c["new"] else None
-            cur = base.row(c["entity_type"], c["entity_id"])
-            if c["op"] == "update":
-                if cur is None:
-                    raise RuntimeError("row %s/%s no longer exists" % (c["entity_type"], c["entity_id"]))
-                fields = [f for f in new if old.get(f) != new.get(f) and f != e.pk]
-                stale = [f for f in fields if cur.get(f) != new.get(f)]
-                if stale and not force:
-                    raise RuntimeError("values changed since commit %d: %s"
-                                       % (commit_id, ", ".join(stale)))
-                base.update(c["entity_type"], c["entity_id"], {f: old.get(f) for f in fields})
-            elif c["op"] == "insert":
-                if cur is None:
-                    continue
-                if not force and any(cur.get(f) != new.get(f) for f in new if f != e.pk):
-                    raise RuntimeError("row %s/%s changed since commit %d"
-                                       % (c["entity_type"], c["entity_id"], commit_id))
-                base.delete(c["entity_type"], c["entity_id"])
-            elif c["op"] == "delete":
-                if cur is not None and not force:
-                    raise RuntimeError("row %s/%s exists again" % (c["entity_type"], c["entity_id"]))
-                if cur is None:
-                    cols = [k for k in old]
-                    base.con.execute(
-                        "INSERT INTO %s (%s) VALUES (%s)"
-                        % (q(e.table), ", ".join(q(k) for k in cols), ", ".join("?" * len(cols))),
-                        [old[k] for k in cols])
+            _apply_inverse(base, c, force, "commit %d" % commit_id)
+        return cid
+
+
+def revert_change(base, change_id, force=False, note=None):
+    """Undo a single recorded change as a new commit (spec 4.3).
+
+    Finer-grained than ``revert``: one row of ``changes`` instead of a whole
+    commit.  Returns the new commit id.
+    """
+    c = base.con.execute("SELECT * FROM changes WHERE id=?", (change_id,)).fetchone()
+    if not c:
+        raise KeyError("unknown change: %s" % change_id)
+    with base.transaction(note or ("revert change %d" % change_id), kind="revert") as cid:
+        _apply_inverse(base, dict(c), force, "change %d" % change_id)
         return cid

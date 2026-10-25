@@ -52,6 +52,7 @@ Base.commits = _versioning.commits
 Base.get_version = _versioning.get_version
 Base.compare_versions = _versioning.compare_versions
 Base.revert = _versioning.revert
+Base.revert_change = _versioning.revert_change
 
 Base.match_candidates = _links.match_candidates
 Base.link = _links.link

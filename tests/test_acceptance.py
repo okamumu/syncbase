@@ -232,6 +232,17 @@ class VersioningTests(Fixture):
         # Reverting is itself a commit; nothing was rewritten.
         self.assertEqual(self.base.commits()[0]["kind"], "revert")
 
+    def test_revert_single_change(self):
+        self.sync({"b1": {"title": "Dune", "price": "9"}})
+        with self.base.transaction("manual fix"):
+            self.base.update("book", self.book_id(), {"title": "A"})
+            self.base.update("book", self.book_id(), {"price": "1"})
+        ch = [h for h in self.base.history("book", self.book_id())
+              if h["op"] == "update" and '"price":"1"' in h["new"]][0]
+        self.base.revert_change(ch["id"])
+        v = self.base.values("book", self.book_id())
+        self.assertEqual((v["title"], v["price"]), ("A", "9"))   # only the price reverted
+
     def test_revert_refuses_stale(self):
         self.sync({"b1": {"title": "Dune", "price": "9"}})
         with self.base.transaction("fix 1") as cid:
