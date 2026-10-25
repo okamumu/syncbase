@@ -211,6 +211,48 @@ class RelationTests(Fixture):
         self.base.merge_entities("person", self.p2, self.p1)
         self.assertEqual(self.base.relation_of("author", ("book", self.a1))["to_id"], self.p2)
 
+    def test_merge_repoints_from_side(self):
+        # The dropped record's own relation moves to the kept one...
+        with self.base.transaction("seed"):
+            p3 = self.base.insert("person", {"name": "supervisor"})
+        self.base.relate("mentor", ("person", self.p1), ("person", p3))
+        self.base.merge_entities("person", self.p2, self.p1)
+        self.assertEqual(self.base.relation_of("mentor", ("person", self.p2))["to_id"], p3)
+
+    def test_merge_from_side_keep_wins_on_collision(self):
+        # ...unless the kept record already has one of the same kind.
+        with self.base.transaction("seed"):
+            p3 = self.base.insert("person", {"name": "mentor of keep"})
+            p4 = self.base.insert("person", {"name": "mentor of drop"})
+        self.base.relate("mentor", ("person", self.p2), ("person", p3))
+        self.base.relate("mentor", ("person", self.p1), ("person", p4))
+        self.base.merge_entities("person", self.p2, self.p1)
+        self.assertEqual(self.base.relation_of("mentor", ("person", self.p2))["to_id"], p3)
+        self.assertEqual(len(self.base.relations("mentor")), 1)
+
+    def test_merge_drops_self_relation(self):
+        # drop pointed at keep: repointing would make it point at itself.
+        self.base.judge("person", ("person", self.p1), ("person", self.p2), "same")
+        self.base.relate("same_as", ("person", self.p1), ("person", self.p2))
+        self.base.merge_entities("person", self.p2, self.p1)
+        self.assertIsNone(self.base.relation_of("same_as", ("person", self.p2)))
+
+    def test_unrelate(self):
+        self.base.relate("author", ("book", self.a1), ("person", self.p1))
+        self.base.unrelate("author", ("book", self.a1))
+        self.assertIsNone(self.base.relation_of("author", ("book", self.a1)))
+
+    def test_judge_rejects_unknown_verdict(self):
+        with self.assertRaises(ValueError):
+            self.base.judge("person", ("person", self.p1), ("person", self.p2), "maybe")
+
+    def test_validate_reports_dangling_relations(self):
+        self.base.relate("author", ("book", self.a1), ("person", self.p1))
+        with self.base.transaction("remove person"):
+            self.base.delete("person", self.p1)
+        findings = self.base.validate().get("relations", [])
+        self.assertTrue(any("person/%d does not exist" % self.p1 in f for f in findings))
+
 
 class ExportTests(Fixture):
     def setUp(self):
