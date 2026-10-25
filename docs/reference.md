@@ -87,6 +87,8 @@ Re-committing the same batch is a no-op. Returns
 - `revert(commit_id, force=False, note=None) -> new_commit_id` —
   apply the inverse changes as a **new** commit; refuses when touched
   values changed since (unless `force`).
+- `revert_change(change_id, force=False, note=None) -> new_commit_id` —
+  same, but for a single row of `changes` instead of a whole commit.
 
 ## Linking (links.py)
 
