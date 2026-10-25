@@ -45,12 +45,14 @@ def merge_entities(base, entity_type, keep, drop, note=""):
     then delete the dropped row (recorded as one commit)."""
     if keep == drop:
         raise ValueError("cannot merge an entity into itself")
+    from .relations import merge_relations
     with base.transaction(note or ("merge %s %s into %s" % (entity_type, drop, keep)),
                           kind="merge"):
         for table in ("entity_links", "field_decisions"):
             base.con.execute(
                 "UPDATE %s SET entity_id=? WHERE entity_type=? AND entity_id=?" % table,
                 (keep, entity_type, drop))
+        merge_relations(base, entity_type, keep, drop)
         base.delete(entity_type, drop)
 
 

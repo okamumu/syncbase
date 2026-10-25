@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS export_runs (
 CREATE TABLE IF NOT EXISTS export_records (
     id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL, record_key TEXT NOT NULL, row TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS export_records_run ON export_records (run_id);
+CREATE TABLE IF NOT EXISTS relations (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
+    from_type TEXT NOT NULL, from_id INTEGER NOT NULL,
+    to_type TEXT NOT NULL, to_id INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+    UNIQUE (kind, from_type, from_id));
+CREATE INDEX IF NOT EXISTS relations_to ON relations (kind, to_type, to_id);
+CREATE TABLE IF NOT EXISTS judgements (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
+    a_type TEXT NOT NULL, a_id INTEGER NOT NULL, b_type TEXT NOT NULL, b_id INTEGER NOT NULL,
+    verdict TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', compared TEXT,
+    actor TEXT NOT NULL DEFAULT '', ts TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sync_context (id INTEGER PRIMARY KEY CHECK (id = 1), commit_id INTEGER);
 INSERT OR IGNORE INTO sync_context VALUES (1, NULL);
 """

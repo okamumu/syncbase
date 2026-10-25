@@ -24,6 +24,7 @@ Typical flow::
 """
 from . import export as _export
 from . import links as _links
+from . import relations as _relations
 from . import provenance as _provenance
 from . import staging as _staging
 from . import validate as _validate
@@ -60,6 +61,14 @@ Base.unlink = _links.unlink
 Base.links_of = _links.links_of
 Base.merge_entities = _links.merge_entities
 Base.split_entity = _links.split_entity
+
+Base.relate = _relations.relate
+Base.unrelate = _relations.unrelate
+Base.relation_of = _relations.relation_of
+Base.relations = _relations.relations
+Base.judge = _relations.judge
+Base.judgements = _relations.judgements
+Base.pair_verdicts = _relations.pair_verdicts
 
 Base.provenance = _provenance.provenance
 Base.decide = _provenance.decide

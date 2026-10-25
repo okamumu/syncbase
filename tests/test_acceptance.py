@@ -177,6 +177,41 @@ class Acceptance(Fixture):
         self.assertEqual([c["field"] for c in cs], ["title"])
 
 
+class RelationTests(Fixture):
+    """Master-to-master record linking and judgement history (spec 6.1/6.4)."""
+
+    def setUp(self):
+        super().setUp()
+        self.base.entity("person", fields=["name"])
+        with self.base.transaction("seed"):
+            self.p1 = self.base.insert("person", {"name": "F. Herbert"})
+            self.p2 = self.base.insert("person", {"name": "Frank Herbert"})
+            self.a1 = self.base.insert("book", {"title": "Dune"})
+
+    def test_relate_and_repoint(self):
+        self.base.relate("author", ("book", self.a1), ("person", self.p1), reason="same e-mail")
+        r = self.base.relation_of("author", ("book", self.a1))
+        self.assertEqual((r["to_id"], r["reason"]), (self.p1, "same e-mail"))
+        self.base.relate("author", ("book", self.a1), ("person", self.p2), reason="reassigned")
+        self.assertEqual(self.base.relation_of("author", ("book", self.a1))["to_id"], self.p2)
+        self.assertEqual(len(self.base.relations("author", ("person", self.p2))), 1)
+
+    def test_judgements_latest_wins_and_reopen(self):
+        a, b = ("person", self.p1), ("person", self.p2)
+        self.base.judge("person", a, b, "deferred", reason="not sure yet")
+        self.assertEqual(self.base.pair_verdicts("person")[frozenset((a, b))][0], "deferred")
+        self.base.judge("person", a, b, "different", reason="two people, same name")
+        self.assertEqual(self.base.pair_verdicts("person")[frozenset((a, b))][0], "different")
+        self.base.judge("person", a, b, "reopen")
+        self.assertNotIn(frozenset((a, b)), self.base.pair_verdicts("person"))
+        self.assertEqual(len(self.base.judgements("person", a)), 3)   # history is append-only
+
+    def test_merge_repoints_relations(self):
+        self.base.relate("author", ("book", self.a1), ("person", self.p1))
+        self.base.merge_entities("person", self.p2, self.p1)
+        self.assertEqual(self.base.relation_of("author", ("book", self.a1))["to_id"], self.p2)
+
+
 class ExportTests(Fixture):
     def setUp(self):
         super().setUp()
