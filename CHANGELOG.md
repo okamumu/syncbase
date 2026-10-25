@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.1 — 2026-10-25
+
+- `revert_change`: undo a single recorded change as a new commit
+  (finer-grained than `revert`).
+- Relations: master-to-master resolution pointers (`relate`, `unrelate`,
+  `relation_of`, `relations`) — one pointer per `(kind, from)`.
+- Judgements: append-only resolution judgement history (`judge`,
+  `judgements`, `pair_verdicts`) with verdicts `same` / `different` /
+  `deferred` / `reopen`; recording `different` keeps settled pairs from
+  being proposed again.
+- `merge_entities` repoints relations (keep side wins on a `(kind, from)`
+  collision; self-pointing relations are dropped).
+- `validate()` reports relations whose endpoints no longer exist.
+- CI on GitHub Actions; API quick reference in `docs/reference.md`.
+
 ## 0.1.0 — 2026-10-25
 
 First cut of the data management core (layer 2 of the specification,

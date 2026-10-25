@@ -35,7 +35,7 @@ from .merge import (AGREED, CONFLICT, DELETE, MASTER_KEPT, MISSING,
 from .staging import StaleView, Unresolved
 from .store import Base
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = ["Base", "StaleView", "Unresolved", "MISSING", "DELETE",
            "three_way", "three_way_field",
            "UNCHANGED", "NOT_PROVIDED", "MASTER_KEPT", "SOURCE_UPDATE",
