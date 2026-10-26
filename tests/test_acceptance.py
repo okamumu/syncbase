@@ -84,24 +84,53 @@ class Acceptance(Fixture):
         self.assertEqual((f["status"], f["apply"]), (syncbase.CONFLICT, False))
         with self.assertRaises(syncbase.Unresolved):
             self.base.commit(b)
-        # 5. an explicit resolution is kept on re-import of the same source
-        self.base.resolve(b, {("b1", "title"): "master"})
-        self.base.commit(b)
-        self.assertEqual(self.title(), "B")
-        for _ in range(2):
-            b = self.base.stage("shop", {"b1": {"title": "C", "price": "9"}}, MAPPING)
+
+    def _title_conflict_b_vs_c(self):
+        """Source A/A synced, master edited to B, source then changes to C.
+        Returns the staged batch after checking it holds exactly the
+        expected B-vs-C conflict on ``title``."""
+        self.sync({"b1": {"title": "A", "price": "9"}})
+        with self.base.transaction("manual fix"):
+            self.base.update("book", self.book_id(), {"title": "B"})
+        self.sync({"b1": {"title": "A", "price": "9"}})          # observed, not reconciled
+        b = self.base.stage("shop", {"b1": {"title": "C", "price": "9"}}, MAPPING)
+        cs = self.base.conflicts(b)
+        self.assertEqual(len(cs), 1)
+        c = cs[0]
+        self.assertEqual((c["external_key"], c["role"], c["field"]), ("b1", "", "title"))
+        self.assertEqual((c["s0"], c["s1"], c["m0"], c["m1"]), ("A", "C", "A", "B"))
+        self.assertFalse(c["auto"])
+        self.assertIsNone(c["resolution"])
+        return b
+
+    def _assert_reimport_keeps(self, source_title, expected, times=3):
+        for _ in range(times):
+            b = self.base.stage("shop", {"b1": {"title": source_title, "price": "9"}}, MAPPING)
+            self.assertEqual(self.base.conflicts(b), [])
             f = self.base.diff(b)["records"][0]["roles"][0]["fields"]["title"]
             self.assertEqual(f["status"], syncbase.UNCHANGED)
             self.base.commit(b)
-            self.assertEqual(self.title(), "B")
-        # ... and resolving to the source likewise sticks
-        b = self.base.stage("shop", {"b1": {"title": "D", "price": "9"}}, MAPPING)
-        self.base.resolve(b, {("b1", "title"): "source"}) if self.base.conflicts(b) else None
+            self.assertEqual(self.title(), expected)
+
+    def test_02c_conflict_resolved_to_master_is_kept_on_reimport(self):
+        b = self._title_conflict_b_vs_c()
+        self.base.resolve(b, {("b1", "title"): "master"})
         self.base.commit(b)
-        self.assertEqual(self.title(), "D")
-        b = self.base.stage("shop", {"b1": {"title": "D", "price": "9"}}, MAPPING)
-        f = self.base.diff(b)["records"][0]["roles"][0]["fields"]["title"]
-        self.assertEqual(f["status"], syncbase.UNCHANGED)
+        self.assertEqual(self.title(), "B")
+        st = self.base.con.execute(
+            "SELECT s0, m0 FROM sync_states WHERE field='title'").fetchone()
+        self.assertEqual((st["s0"], st["m0"]), ('"C"', '"B"'))   # both sides reconciled
+        self._assert_reimport_keeps("C", "B")
+
+    def test_02d_conflict_resolved_to_source_is_kept_on_reimport(self):
+        b = self._title_conflict_b_vs_c()
+        self.base.resolve(b, {("b1", "title"): "source"})
+        self.base.commit(b)
+        self.assertEqual(self.title(), "C")
+        st = self.base.con.execute(
+            "SELECT s0, m0 FROM sync_states WHERE field='title'").fetchone()
+        self.assertEqual((st["s0"], st["m0"]), ('"C"', '"C"'))   # both sides reconciled
+        self._assert_reimport_keeps("C", "C")
 
     def test_03_source_only_change_is_an_update(self):
         self.sync({"b1": {"title": "Dune", "price": "9"}})

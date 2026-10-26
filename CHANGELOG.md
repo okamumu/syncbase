@@ -9,9 +9,16 @@
   the edit stays MASTER_KEPT across re-imports and a source change becomes
   a conflict. Explicit resolutions still advance both sides. No policy
   setting is needed; `protected` remains a separate adoption policy.
-- Regression test for the sequence: sync A/A → master B → re-import A
-  (several times, B kept) → source C (conflict) → resolve → re-import
-  (decision kept).
+- **Behaviour change with several sources**: a value written by another
+  source looks like a master-only edit (MASTER_KEPT) to this source, so its
+  M0 no longer moves either. When this source later changes the field, the
+  other source's update is protected and the change surfaces as a conflict
+  instead of overwriting it — expect more conflicts than before in
+  multi-source setups.
+- Regression tests: sync A/A → master B → re-import A (several times, B
+  kept) → source C (conflict); and, as separate tests, resolving that
+  conflict to the master and to the source, each kept with no new conflict
+  over repeated re-imports.
 
 ## 0.1.2 — 2026-10-26
 
