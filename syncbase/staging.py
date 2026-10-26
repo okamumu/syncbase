@@ -230,6 +230,19 @@ def _set_state(base, source_id, key, role, field, s1, m_now):
         (source_id, key, role, field, _j(s1), _j(m_now), now()))
 
 
+def _observe(base, source_id, key, role, field, s1, m_now):
+    """Advance only the source side (S0) of the baseline; keep the master
+    side (M0) where it was.  Used for MASTER_KEPT fields: re-observing an
+    unchanged source does not reconcile a master-only edit (spec 4.4,
+    5.5), so a later source change still meets it as a conflict.  Without
+    a stored baseline (first contact) both sides are recorded."""
+    cur = base.con.execute(
+        "UPDATE sync_states SET s0=?, updated_at=? WHERE source_id=? AND external_key=?"
+        " AND role=? AND field=?", (_j(s1), now(), source_id, key, role, field))
+    if cur.rowcount == 0:
+        _set_state(base, source_id, key, role, field, s1, m_now)
+
+
 def _decide(base, etype, eid, field, value, manual, source_id, note=""):
     base.con.execute(
         "INSERT INTO field_decisions (entity_type, entity_id, field, value, manual, source_id,"
@@ -320,6 +333,10 @@ def commit(base, batch_id, expected_head=None, note=""):
                         continue
                     if r is not None and r["resolution"] == "defer":
                         continue                 # state frozen: surfaces again (spec 4.4)
+                    if x["status"] == merge.MASTER_KEPT:
+                        # master-only edit: observed, not reconciled (M0 stays)
+                        _observe(base, source_id, key, rname, f, x["s1"], m_now.get(f))
+                        continue
                     _set_state(base, source_id, key, rname, f, x["s1"], m_now.get(f))
             (summary["updated"] if touched else summary["same"]).append(key)
         for v in d["vanished"]:

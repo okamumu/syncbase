@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.3 — 2026-10-27
+
+- **Baseline fix (spec 4.4, 5.5)**: committing a batch no longer advances
+  M0 for MASTER_KEPT fields. A master-only edit used to be treated as
+  reconciled as soon as the same source was imported again, so a later
+  source change overwrote it silently. Now only S0 (the observation) moves;
+  the edit stays MASTER_KEPT across re-imports and a source change becomes
+  a conflict. Explicit resolutions still advance both sides. No policy
+  setting is needed; `protected` remains a separate adoption policy.
+- Regression test for the sequence: sync A/A → master B → re-import A
+  (several times, B kept) → source C (conflict) → resolve → re-import
+  (decision kept).
+
 ## 0.1.2 — 2026-10-26
 
 - `relate` / `judge`: `commit=` flag so they can take part in a caller's

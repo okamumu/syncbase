@@ -47,9 +47,21 @@ Per field: S0/S1/M0/M1 as in the README table. Key points:
 ## Baseline update timing (§4.4)
 
 Baselines move only when a batch is **committed** (after conflicts are
-resolved): S0 := S1 and M0 := the master value as written. Deferred
-conflicts keep their old baseline, so unresolved differences surface again
-on the next import. Editing the master never advances a source's baseline.
+resolved). The source side and the master side move separately:
+
+- S0 := S1 for every provided field (the source was observed).
+- M0 := the master value as written, for fields that were synchronized:
+  unchanged, source updates, agreed values and explicitly resolved
+  conflicts.
+- For a MASTER_KEPT field (master-only edit, source unchanged) M0 is **not**
+  advanced. Re-importing the same source is only an observation; it does not
+  reconcile the edit. When the source later changes, the edit meets it as a
+  conflict instead of being overwritten silently (§5.5). This holds under the
+  default `auto` policy; `protected` / manual decisions are a separate,
+  additional adoption policy.
+- Deferred conflicts keep their old baseline, so unresolved differences
+  surface again on the next import. Editing the master never advances a
+  source's baseline.
 
 ## Versioning (§4)
 

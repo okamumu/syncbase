@@ -54,10 +54,53 @@ class Acceptance(Fixture):
         s = self.sync({"b1": {"title": "Dune", "price": "9"}})
         self.assertEqual(self.title(), "Dune (1965)")
         self.assertEqual(s["updated"], [])                  # nothing rewritten
-        # After reconciliation the master change is acknowledged (spec 4.4).
+        # Re-importing the same source does not reconcile the master-only
+        # edit (spec 4.4, 5.5): it stays MASTER_KEPT, not UNCHANGED.
         b = self.base.stage("shop", {"b1": {"title": "Dune", "price": "9"}}, MAPPING)
         d = self.base.diff(b)
         f = d["records"][0]["roles"][0]["fields"]["title"]
+        self.assertEqual(f["status"], syncbase.MASTER_KEPT)
+
+    def test_02b_master_only_edit_survives_reimports_until_source_changes(self):
+        # 1. source and master both A
+        self.sync({"b1": {"title": "A", "price": "9"}})
+        # 2. master only -> B
+        with self.base.transaction("manual fix"):
+            self.base.update("book", self.book_id(), {"title": "B"})
+        # 3. the same source A, imported several times: B is kept every time
+        for _ in range(3):
+            b = self.base.stage("shop", {"b1": {"title": "A", "price": "9"}}, MAPPING)
+            f = self.base.diff(b)["records"][0]["roles"][0]["fields"]["title"]
+            self.assertEqual(f["status"], syncbase.MASTER_KEPT)
+            self.base.commit(b)
+            self.assertEqual(self.title(), "B")
+        st = self.base.con.execute(
+            "SELECT s0, m0 FROM sync_states WHERE field='title'").fetchone()
+        self.assertEqual((st["s0"], st["m0"]), ('"A"', '"A"'))   # observed A; M0 not moved to B
+        # 4. source changes to C: B vs C is a conflict (no protected policy involved)
+        self.assertEqual(self.base.entities["book"].policies.get("title"), None)
+        b = self.base.stage("shop", {"b1": {"title": "C", "price": "9"}}, MAPPING)
+        f = self.base.diff(b)["records"][0]["roles"][0]["fields"]["title"]
+        self.assertEqual((f["status"], f["apply"]), (syncbase.CONFLICT, False))
+        with self.assertRaises(syncbase.Unresolved):
+            self.base.commit(b)
+        # 5. an explicit resolution is kept on re-import of the same source
+        self.base.resolve(b, {("b1", "title"): "master"})
+        self.base.commit(b)
+        self.assertEqual(self.title(), "B")
+        for _ in range(2):
+            b = self.base.stage("shop", {"b1": {"title": "C", "price": "9"}}, MAPPING)
+            f = self.base.diff(b)["records"][0]["roles"][0]["fields"]["title"]
+            self.assertEqual(f["status"], syncbase.UNCHANGED)
+            self.base.commit(b)
+            self.assertEqual(self.title(), "B")
+        # ... and resolving to the source likewise sticks
+        b = self.base.stage("shop", {"b1": {"title": "D", "price": "9"}}, MAPPING)
+        self.base.resolve(b, {("b1", "title"): "source"}) if self.base.conflicts(b) else None
+        self.base.commit(b)
+        self.assertEqual(self.title(), "D")
+        b = self.base.stage("shop", {"b1": {"title": "D", "price": "9"}}, MAPPING)
+        f = self.base.diff(b)["records"][0]["roles"][0]["fields"]["title"]
         self.assertEqual(f["status"], syncbase.UNCHANGED)
 
     def test_03_source_only_change_is_an_update(self):
