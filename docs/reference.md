@@ -27,10 +27,12 @@ snapshot) or `"delta"`. `on_vanish` is `"ignore"` or
 `("set", role, {column: value})` applied to linked entities that
 disappear from a full snapshot.
 
-### `transaction(note="", kind="manual", batch_id=None, actor=None)` *(context manager)*
+### `transaction(note="", kind="manual", batch_id=None, actor=None, commit=True)` *(context manager)*
 Group master changes into one commit. Yields the commit id; empty
 commits are discarded, errors roll everything back. **All manual writes
-must happen inside this.**
+must happen inside this.** With `commit=False` the final `con.commit()`
+is skipped, so the caller can inspect the written state and then
+`base.con.rollback()` (dry run) or commit itself.
 
 ### Row helpers
 - `row(entity_type, entity_id) -> dict | None` — whole row.
@@ -109,13 +111,13 @@ Master-to-master resolution pointers and the judgement history behind
 entity resolution. A relation is **one pointer per `(kind, from)`** (not a
 general many-to-many edge); refs are `(entity_type, entity_id)` tuples.
 
-- `relate(kind, from_ref, to_ref, reason="", actor=None)` — set or
+- `relate(kind, from_ref, to_ref, reason="", actor=None, commit=True)` — set or
   repoint a record's relation.
 - `unrelate(kind, from_ref)` — remove it.
 - `relation_of(kind, from_ref) -> dict | None`
 - `relations(kind, to_ref=None) -> list[dict]` — all relations of a kind,
   optionally only those pointing at `to_ref`.
-- `judge(kind, a_ref, b_ref, verdict, reason="", compared=None, actor=None)` —
+- `judge(kind, a_ref, b_ref, verdict, reason="", compared=None, actor=None, commit=True)` —
   record a resolution judgement about an unordered pair:
   `"same"` | `"different"` | `"deferred"` | `"reopen"` (clears the pair's
   state). Append-only; recording `"different"` keeps settled pairs from
@@ -124,6 +126,9 @@ general many-to-many edge); refs are `(entity_type, entity_id)` tuples.
   first.
 - `pair_verdicts(kind) -> {frozenset({a_ref, b_ref}): (verdict, reason)}` —
   the current state per pair (latest verdict wins, `reopen` clears).
+
+`relate` and `judge` take `commit=False` to join a caller's transaction
+(including a `transaction(commit=False)` dry run).
 
 `merge_entities` repoints relations automatically (the keep side wins on a
 `(kind, from)` collision). `validate()` reports relations whose endpoints
@@ -158,6 +163,8 @@ no longer exist.
   (formula-injection guarded) and record the run as official.
 - `export_history(profile_id) -> list[dict]` — all runs, newest first.
 - `compare_exports(run_id_1, run_id_2) -> {added, removed, changed}`
+- `run_rows(run_id) -> list[dict]` — a run's rows in output order
+  (without the internal `_pos` field).
 
 ## Module-level names
 

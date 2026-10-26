@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 — 2026-10-26
 
 - `relate` / `judge`: `commit=` flag so they can take part in a caller's
   transaction (dry runs included).
