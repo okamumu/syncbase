@@ -192,11 +192,13 @@ class Base:
         return self.con.execute("SELECT COALESCE(MAX(id), 0) FROM commits").fetchone()[0]
 
     @contextlib.contextmanager
-    def transaction(self, note="", kind="manual", batch_id=None, actor=None):
+    def transaction(self, note="", kind="manual", batch_id=None, actor=None, commit=True):
         """Group master changes into one commit (spec 4.2).
 
         Empty commits (no recorded change) are discarded on exit.  On error
-        everything is rolled back.
+        everything is rolled back.  With ``commit=False`` the final
+        ``con.commit()`` is skipped, so the caller can inspect the written
+        state and then roll back (dry run) or commit itself.
         """
         cur = self.con.execute(
             "INSERT INTO commits (ts, actor, kind, batch_id, note, parent) VALUES (?,?,?,?,?,?)",
@@ -209,7 +211,8 @@ class Base:
             if not n:
                 self.con.execute("DELETE FROM commits WHERE id=?", (cid,))
             self.con.execute("UPDATE sync_context SET commit_id=NULL WHERE id=1")
-            self.con.commit()
+            if commit:
+                self.con.commit()
         except Exception:
             self.con.rollback()
             self.con.execute("UPDATE sync_context SET commit_id=NULL WHERE id=1")

@@ -352,3 +352,25 @@ class VersioningTests(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Transaction(Fixture):
+    def test_rollback_on_error(self):
+        self.sync({"b1": {"title": "Dune", "price": "9"}})
+        head = self.base.head()
+        with self.assertRaises(RuntimeError):
+            with self.base.transaction("broken"):
+                self.base.update("book", self.book_id(), {"title": "X"})
+                raise RuntimeError("boom")
+        self.assertEqual(self.title(), "Dune")              # change rolled back
+        self.assertEqual(self.base.head(), head)            # no commit left behind
+
+    def test_commit_false_lets_caller_roll_back(self):
+        self.sync({"b1": {"title": "Dune", "price": "9"}})
+        head = self.base.head()
+        with self.base.transaction("dry run", commit=False):
+            self.base.update("book", self.book_id(), {"title": "X"})
+        self.assertEqual(self.title(), "X")                 # visible before rollback
+        self.base.con.rollback()
+        self.assertEqual(self.title(), "Dune")
+        self.assertEqual(self.base.head(), head)

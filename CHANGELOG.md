@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `Base.transaction(commit=False)`: skip the final `con.commit()` so the
+  caller can inspect the written state and roll back (dry run) or commit
+  itself.  Default behaviour is unchanged.
+
 ## 0.1.1 — 2026-10-25
 
 - `revert_change`: undo a single recorded change as a new commit
