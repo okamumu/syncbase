@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `relate` / `judge`: `commit=` flag so they can take part in a caller's
+  transaction (dry runs included).
+- `run_rows(base, run_id)`: public accessor for a run's rows in output
+  order, without the internal `_pos` field (also bound as `Base.run_rows`).
 - `Base.transaction(commit=False)`: skip the final `con.commit()` so the
   caller can inspect the written state and roll back (dry run) or commit
   itself.  Default behaviour is unchanged.

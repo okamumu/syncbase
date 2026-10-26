@@ -374,3 +374,25 @@ class Transaction(Fixture):
         self.base.con.rollback()
         self.assertEqual(self.title(), "Dune")
         self.assertEqual(self.base.head(), head)
+
+
+class RelationsCommitFlag(Fixture):
+    def test_relate_and_judge_commit_false(self):
+        self.sync({"b1": {"title": "Dune", "price": "9"}})
+        with self.base.transaction("link work", commit=False):
+            self.base.relate("person", ("book", 1), ("book", 2), commit=False)
+            self.base.judge("person", ("book", 1), ("book", 2), "same", commit=False)
+        self.base.con.rollback()
+        self.assertEqual(self.base.relations("person"), [])
+        self.assertEqual(self.base.judgements("person"), [])
+
+
+class RunRows(Fixture):
+    def test_run_rows_public(self):
+        from syncbase import export
+        self.sync({"b1": {"title": "Dune", "price": "9"}})
+        export.export_profile(self.base, "books", "select title, price from book", ["title"])
+        run = export.prepare_export(self.base, "books")
+        rows = self.base.run_rows(run)
+        self.assertEqual(rows, [{"title": "Dune", "price": "9"}])
+        self.assertNotIn("_pos", rows[0])

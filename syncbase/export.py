@@ -149,6 +149,12 @@ def confirm_export(base, run_id, path):
     return dict(file=path, hash=digest, rows=len(rows))
 
 
+def run_rows(base, run_id):
+    """The rows of a run, in output order, without the internal ``_pos``."""
+    rows = sorted(_run_rows(base, run_id).values(), key=lambda r: r.get("_pos", 0))
+    return [{k: v for k, v in r.items() if k != "_pos"} for r in rows]
+
+
 def export_history(base, profile_id):
     """All runs of a profile, newest first (spec 7.6)."""
     return [dict(r) for r in base.con.execute(

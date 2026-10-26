@@ -82,3 +82,4 @@ Base.export_diff = _export.export_diff
 Base.confirm_export = _export.confirm_export
 Base.export_history = _export.export_history
 Base.compare_exports = _export.compare_exports
+Base.run_rows = _export.run_rows

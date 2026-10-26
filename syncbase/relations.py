@@ -21,9 +21,10 @@ from .store import now
 VERDICTS = ("same", "different", "deferred", "reopen")
 
 
-def relate(base, kind, from_ref, to_ref, reason="", actor=None):
+def relate(base, kind, from_ref, to_ref, reason="", actor=None, commit=True):
     """Set (or repoint) the relation of one record.  ``from_ref``/``to_ref``
-    are ``(entity_type, entity_id)``.  One relation per (kind, from)."""
+    are ``(entity_type, entity_id)``.  One relation per (kind, from).
+    ``commit=False`` leaves committing to the caller's transaction."""
     base.con.execute(
         "INSERT INTO relations (kind, from_type, from_id, to_type, to_id, reason, actor, created_at)"
         " VALUES (?,?,?,?,?,?,?,?)"
@@ -31,7 +32,8 @@ def relate(base, kind, from_ref, to_ref, reason="", actor=None):
         " to_type=excluded.to_type, to_id=excluded.to_id, reason=excluded.reason,"
         " actor=excluded.actor, created_at=excluded.created_at",
         (kind, from_ref[0], from_ref[1], to_ref[0], to_ref[1], reason, actor or base.actor, now()))
-    base.con.commit()
+    if commit:
+        base.con.commit()
 
 
 def unrelate(base, kind, from_ref):
@@ -56,7 +58,7 @@ def relations(base, kind, to_ref=None):
     return [dict(r) for r in rows]
 
 
-def judge(base, kind, a_ref, b_ref, verdict, reason="", compared=None, actor=None):
+def judge(base, kind, a_ref, b_ref, verdict, reason="", compared=None, actor=None, commit=True):
     """Record a resolution judgement about the pair (a, b) (spec 5.4/6.4).
 
     ``compared`` is any JSON string describing what was looked at.  The pair
@@ -69,7 +71,8 @@ def judge(base, kind, a_ref, b_ref, verdict, reason="", compared=None, actor=Non
         "INSERT INTO judgements (kind, a_type, a_id, b_type, b_id, verdict, reason, compared, actor, ts)"
         " VALUES (?,?,?,?,?,?,?,?,?,?)",
         (kind, a[0], a[1], b[0], b[1], verdict, reason, compared, actor or base.actor, now()))
-    base.con.commit()
+    if commit:
+        base.con.commit()
 
 
 def judgements(base, kind, ref=None, limit=500):
