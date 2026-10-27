@@ -70,7 +70,15 @@ def prepare_export(base, profile_id):
 
     Returns the run id; use ``export_diff`` to preview and
     ``confirm_export`` to make it official.
+
+    ``db_version`` is the latest confirmed commit.  Inside an open
+    ``transaction()`` it joins that transaction; it refuses when the
+    transaction has already written master changes, because the rows would
+    then match no confirmed version.
     """
+    if base._dirty():
+        raise RuntimeError("prepare_export inside a transaction with unconfirmed master changes:"
+                           " the snapshot would match no confirmed version; export after it commits")
     p = _profile(base, profile_id)
     cols, rows = _rows(base, p)
     cur = base.con.execute(
@@ -82,7 +90,7 @@ def prepare_export(base, profile_id):
         base.con.execute(
             "INSERT INTO export_records (run_id, record_key, row) VALUES (?,?,?)",
             (run_id, _key_of(p, row), json.dumps(dict(row, _pos=i), ensure_ascii=False)))
-    base.con.commit()
+    base._autocommit()
     return run_id
 
 

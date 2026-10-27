@@ -39,7 +39,10 @@ def _load(v):
 
 
 def stage(base, source_id, records, mapping):
-    """Store one observed batch.  ``records`` is ``{external_key: payload}``."""
+    """Store one observed batch.  ``records`` is ``{external_key: payload}``.
+
+    Inside an open ``transaction()`` it joins that transaction (no commit of
+    its own) and records the latest confirmed commit as ``base_commit``."""
     base.get_source(source_id)
     for f, spec in mapping.items():
         if len(spec) != 3:
@@ -54,7 +57,7 @@ def stage(base, source_id, records, mapping):
         base.con.execute(
             "INSERT INTO source_records (source_id, batch_id, external_key, payload, observed_at) "
             "VALUES (?,?,?,?,?)", (source_id, batch_id, str(key), _j(payload), now()))
-    base.con.commit()
+    base._autocommit()
     return batch_id
 
 

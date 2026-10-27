@@ -24,6 +24,27 @@
   reuses the largest id). `revert` of such a detach-only commit now
   re-attaches the links, baselines and relations without touching master
   values; it refuses if the entity no longer exists.
+- **When a commit id is confirmed history**: once `transaction()` has
+  exited normally, the commit was kept (not empty) and the database
+  transaction is committed (with `commit=False`: when the caller commits).
+  New `Base.confirmed(commit_id)` answers it. Two separate fixes follow:
+  - *Ids are never handed out twice.* `commits` uses AUTOINCREMENT, and
+    the id of a failed or rolled-back transaction is burned as well.
+    Existing databases are migrated on open (rows kept as they are);
+    numbering resumes after every commit id recorded anywhere (`commits`,
+    `changes`, `detachments`, `batches.base_commit`,
+    `export_runs.db_version`), so a stale reference never meets a new
+    commit.
+  - *No unconfirmed id is recorded as a version.* `head()` now returns
+    the latest confirmed commit: inside an open transaction it is the
+    previous one, not the id being written. `stage` and `prepare_export`
+    join an open transaction instead of committing it halfway (so a
+    failing transaction also undoes them), and `prepare_export` refuses
+    when that transaction has already written master changes — its rows
+    would match no confirmed version.
+  Other functions that commit on their own (`resolve`, `link`, `unlink`,
+  `decide`, `export_profile`, `confirm_export`) are unchanged; call them
+  outside `transaction()`.
 
 ## 0.1.3 — 2026-10-27
 

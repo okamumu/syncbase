@@ -13,6 +13,17 @@ import os
 import shutil
 import sqlite3
 
+# AUTOINCREMENT: the id of a discarded (empty) commit is never handed out again.
+_COMMITS_COLUMNS = """(
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'manual', batch_id INTEGER, note TEXT NOT NULL DEFAULT '',
+    parent INTEGER)"""
+
+# Columns that record a commit id; a migrated database starts numbering after all of them.
+_COMMIT_REFS = (("commits", "id"), ("commits", "parent"), ("changes", "commit_id"),
+                ("detachments", "commit_id"), ("batches", "base_commit"),
+                ("export_runs", "db_version"))
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
     source_id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'full',
@@ -36,10 +47,7 @@ CREATE TABLE IF NOT EXISTS sync_states (
     role TEXT NOT NULL DEFAULT '', field TEXT NOT NULL,
     s0 TEXT, m0 TEXT, updated_at TEXT NOT NULL,
     UNIQUE (source_id, external_key, role, field));
-CREATE TABLE IF NOT EXISTS commits (
-    id INTEGER PRIMARY KEY, ts TEXT NOT NULL, actor TEXT NOT NULL DEFAULT '',
-    kind TEXT NOT NULL DEFAULT 'manual', batch_id INTEGER, note TEXT NOT NULL DEFAULT '',
-    parent INTEGER);
+CREATE TABLE IF NOT EXISTS commits """ + _COMMITS_COLUMNS + """;
 CREATE TABLE IF NOT EXISTS changes (
     id INTEGER PRIMARY KEY, commit_id INTEGER, ts TEXT NOT NULL,
     entity_type TEXT NOT NULL, entity_id INTEGER NOT NULL, op TEXT NOT NULL,
@@ -120,10 +128,37 @@ class Base:
         self.con = sqlite3.connect(path, check_same_thread=False)
         self.con.row_factory = sqlite3.Row
         self.con.executescript(_SCHEMA)
+        self._migrate_commits()
         self.con.execute("UPDATE sync_context SET commit_id = NULL WHERE id = 1")
         self.con.commit()
         self.entities = {}
         self.checks = {}
+        self._pending = None            # kept commit of a transaction(commit=False) not yet committed
+
+    def _migrate_commits(self):
+        """Rebuild a pre-AUTOINCREMENT ``commits`` table in place (atomic),
+        and start numbering after every commit id recorded anywhere, so a
+        stale reference to a discarded id never meets a new commit."""
+        sql = self.con.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='commits'").fetchone()[0]
+        if "AUTOINCREMENT" in sql.upper():
+            return
+        seq = max(self.con.execute("SELECT COALESCE(MAX(%s), 0) FROM %s" % (col, table)).fetchone()[0]
+                  for table, col in _COMMIT_REFS)
+        self.con.commit()
+        self.con.execute("BEGIN")
+        try:
+            self.con.execute("CREATE TABLE sb_commits_new " + _COMMITS_COLUMNS)
+            self.con.execute("INSERT INTO sb_commits_new (id, ts, actor, kind, batch_id, note, parent)"
+                             " SELECT id, ts, actor, kind, batch_id, note, parent FROM commits")
+            self.con.execute("DROP TABLE commits")
+            self.con.execute("ALTER TABLE sb_commits_new RENAME TO commits")
+            self.con.execute("DELETE FROM sqlite_sequence WHERE name='commits'")
+            self.con.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('commits', ?)", (seq,))
+            self.con.commit()
+        except Exception:
+            self.con.rollback()
+            raise
 
     # ------------------------------------------------------------ registry
 
@@ -192,9 +227,65 @@ class Base:
 
     # ------------------------------------------------------------ commits
 
+    def _unconfirmed(self):
+        """Ids of commits that exist in this connection but are not
+        confirmed history yet: the one a ``transaction()`` is writing, and
+        a kept ``transaction(commit=False)`` commit until the caller commits
+        (a rollback removes it)."""
+        ids = []
+        cur = self.con.execute("SELECT commit_id FROM sync_context WHERE id=1").fetchone()[0]
+        if cur is not None:
+            ids.append(cur)
+        if self._pending is not None:
+            if self.con.in_transaction:
+                ids.append(self._pending)
+            else:                       # the caller committed or rolled back
+                if not self.con.execute("SELECT 1 FROM commits WHERE id=?", (self._pending,)).fetchone():
+                    self._burn(self._pending)
+                self._pending = None
+        return ids
+
+    def _burn(self, commit_id):
+        """Keep a rolled-back commit's id from being handed out again (a
+        rollback also undoes the AUTOINCREMENT counter)."""
+        self.con.execute("UPDATE sqlite_sequence SET seq=MAX(seq, ?) WHERE name='commits'", (commit_id,))
+        self.con.commit()
+
     def head(self):
-        """The latest commit id (the database version, spec 11.2)."""
-        return self.con.execute("SELECT COALESCE(MAX(id), 0) FROM commits").fetchone()[0]
+        """The latest *confirmed* commit id (the database version, spec 11.2).
+
+        A commit id is confirmed once ``transaction()`` has exited normally,
+        the commit was kept (not empty) and the database transaction is
+        committed.  Inside an open transaction this is still the previous
+        confirmed commit, so versions recorded there (``stage``, ``diff``,
+        ``prepare_export``) never point at an id that may be discarded.
+        """
+        ids = self._unconfirmed() or [0]
+        return self.con.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM commits WHERE id NOT IN (%s)" % ",".join("?" * len(ids)),
+            ids).fetchone()[0]
+
+    def confirmed(self, commit_id):
+        """Whether ``commit_id`` is confirmed history (see ``head``).  The id
+        yielded by an empty, failed or rolled-back transaction is not, and
+        it never will be: ids are not handed out twice."""
+        if commit_id in self._unconfirmed():
+            return False
+        return self.con.execute("SELECT 1 FROM commits WHERE id=?", (commit_id,)).fetchone() is not None
+
+    def _dirty(self):
+        """True when an open transaction has written master changes or
+        detachments that are not confirmed yet."""
+        return any(self.con.execute(
+            "SELECT (SELECT COUNT(*) FROM changes WHERE commit_id=?)"
+            " + (SELECT COUNT(*) FROM detachments WHERE commit_id=?)", (c, c)).fetchone()[0]
+            for c in self._unconfirmed())
+
+    def _autocommit(self):
+        """Commit, unless a transaction is open: then join it, so its
+        rollback also undoes what was written here."""
+        if not self._unconfirmed():
+            self.con.commit()
 
     @contextlib.contextmanager
     def transaction(self, note="", kind="manual", batch_id=None, actor=None, commit=True):
@@ -222,10 +313,12 @@ class Base:
             self.con.execute("UPDATE sync_context SET commit_id=NULL WHERE id=1")
             if commit:
                 self.con.commit()
+            elif n:
+                self._pending = cid
         except Exception:
             self.con.rollback()
             self.con.execute("UPDATE sync_context SET commit_id=NULL WHERE id=1")
-            self.con.commit()
+            self._burn(cid)
             raise
 
     # ------------------------------------------------------------ rows

@@ -41,14 +41,22 @@ is skipped, so the caller can inspect the written state and then
 - `update(entity_type, entity_id, values)`
 - `delete(entity_type, entity_id, detach=False, reason="")` — with
   `detach=True`, first `detach()` what points at the row (inside `transaction()`).
-- `head() -> int` — current database version (latest commit id).
+- `head() -> int` — current database version: the latest **confirmed**
+  commit id. A commit is confirmed once `transaction()` exited normally,
+  kept it (not empty) and the database transaction is committed (with
+  `commit=False`: when the caller commits). Inside an open transaction
+  `head()` is still the previous confirmed commit.
+- `confirmed(commit_id) -> bool` — whether an id is confirmed history. The
+  id yielded by an empty, failed or rolled-back transaction is not, and
+  never becomes one: commit ids are never handed out twice.
 - `snapshot(reason="") -> filename` — copy the whole file to `backup_dir`.
 - `close()`
 
 ## Import (staging.py)
 
 ### `stage(source_id, records, mapping) -> batch_id`
-Store one observed batch. `records` is `{external_key: payload}`;
+Store one observed batch (inside an open `transaction()` it joins it and
+records the latest confirmed commit as `base_commit`). `records` is `{external_key: payload}`;
 `mapping` routes payload fields: `{payload_field: (entity_type, role, column)}`.
 A payload key that is absent means *not provided* (never compared);
 `""` = explicit empty, `None` = NULL, `syncbase.DELETE` = explicit clear.
@@ -172,7 +180,9 @@ no longer exist.
   declare a profile. `query` is a SELECT over the master; `key` lists the
   columns that identify a row across runs.
 - `prepare_export(profile_id) -> run_id` — snapshot candidate rows as a
-  *prepared* run (never moves the baseline).
+  *prepared* run (never moves the baseline). `db_version` is the latest
+  confirmed commit; inside an open `transaction()` it joins it, and refuses
+  if that transaction has already written master changes.
 - `export_diff(run_id) -> {added, removed, changed, same, against}` —
   compare a run against the last **confirmed** run of its profile.
 - `confirm_export(run_id, path) -> {file, hash, rows}` — write the CSV

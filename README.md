@@ -120,6 +120,10 @@ string; `None` is NULL; `syncbase.DELETE` is an explicit clear instruction.
   refuses if their place is taken. Tables whose rows get deleted should use
   `INTEGER PRIMARY KEY AUTOINCREMENT` so a deleted id is never handed out
   again (SQLite otherwise reuses the largest one).
+- A commit id is confirmed history once its `transaction()` exited
+  normally, kept the commit and was committed (`Base.confirmed(id)`).
+  Commit ids are never handed out twice, and `head()` — the version that
+  `stage`, `diff` and `prepare_export` record — is always a confirmed one.
 - CSV exports are one-way: diffs are computed against the last *confirmed*
   run; previews never move the baseline. Output is guarded against CSV
   formula injection.
