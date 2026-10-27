@@ -17,6 +17,13 @@
   (`validate()` reported it, and re-importing the record showed it as
   deleted in the master); now re-importing creates it anew.
 - `detachments(...)`: read the detach/restore records.
+- `transaction()` keeps a commit that has detach/restore records even
+  without master changes. Before, a transaction that only called
+  `detach()` was discarded as empty while the detachment kept its commit
+  id, and that id was then reused by the next unrelated commit (SQLite
+  reuses the largest id). `revert` of such a detach-only commit now
+  re-attaches the links, baselines and relations without touching master
+  values; it refuses if the entity no longer exists.
 
 ## 0.1.3 — 2026-10-27
 

@@ -49,7 +49,8 @@ def detach(base, entity_type, entity_id, reason=""):
     before deleting a row that is no longer valid, so no live link points at
     a missing entity (``validate()``) while the past correspondence stays
     traceable.  ``revert``/``revert_change`` restore what was detached when
-    they re-insert the row.
+    they re-insert the row; ``revert`` of a commit that only detached
+    restores it on its own (the commit is kept even without master changes).
 
     Must be called inside ``transaction()``; it never commits, so a failure
     later in the same transaction rolls the detachment back as well.
@@ -90,7 +91,7 @@ def _insert(base, table, row):
 
 def restore(base, commit_id, entity_type, entity_id):
     """Re-attach what ``detach`` removed from one entity in ``commit_id``
-    (used by revert when it re-inserts the row).  All-or-nothing: raises
+    (used by revert, with a re-inserted row or for a detach-only entity).  All-or-nothing: raises
     RuntimeError, before writing anything, if a link key, a baseline or a
     relation slot is taken by something else now.  Records a ``restore``
     row per restored detachment.  Must run inside ``transaction()``."""

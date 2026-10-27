@@ -129,14 +129,27 @@ def revert(base, commit_id, force=False, note=None):
     (spec 4.3: never rewrite history).
 
     Refuses when a touched value has changed since, unless ``force``.
-    Returns the new commit id.
+    What the commit detached is re-attached too: with the re-inserted row
+    for a deleted one, and on its own for an entity that was only detached
+    (all-or-nothing, see ``links.restore``).  Returns the new commit id.
     """
+    from .links import restore
     rows = _rows(base, "SELECT * FROM changes WHERE commit_id=? ORDER BY id DESC", (commit_id,))
-    if not rows:
+    detached = _rows(base, "SELECT DISTINCT entity_type, entity_id FROM detachments"
+                     " WHERE commit_id=? AND kind='detach' ORDER BY entity_type, entity_id", (commit_id,))
+    if not rows and not detached:
         raise KeyError("commit %s has no changes" % commit_id)
+    reinserted = {(c["entity_type"], c["entity_id"]) for c in rows if c["op"] == "delete"}
     with base.transaction(note or ("revert commit %d" % commit_id), kind="revert") as cid:
         for c in rows:
             _apply_inverse(base, c, force, "commit %d" % commit_id)
+        for d in detached:
+            ref = (d["entity_type"], d["entity_id"])
+            if ref in reinserted:
+                continue                                  # restored with the row above
+            if base.row(*ref) is None:
+                raise RuntimeError("cannot restore what was detached from %s/%s: the row no longer exists" % ref)
+            restore(base, commit_id, *ref)
         return cid
 
 

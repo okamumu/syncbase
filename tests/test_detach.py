@@ -16,7 +16,7 @@ MAPPING = {"title": ("book", "", "title"), "price": ("book", "", "price")}
 TABLES = ("book", "person", "entity_links", "sync_states", "relations", "detachments", "commits", "changes")
 
 
-class Detach(unittest.TestCase):
+class DetachFixture(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         b = self.base = syncbase.Base(os.path.join(self.dir.name, "m.sqlite"))
@@ -58,6 +58,8 @@ class Detach(unittest.TestCase):
             self.base.delete("book", eid, detach=True, reason="retired")
         return eid, before, cid
 
+
+class Detach(DetachFixture):
     def test_outside_transaction_refused(self):
         before = self.dump()
         with self.assertRaises(RuntimeError):
@@ -142,6 +144,90 @@ class Detach(unittest.TestCase):
         # importing it again creates it anew (not "deleted in the master")
         d = self.base.diff(self.base.stage("shop", {"b3": {"title": "Kim", "price": "7"}}, MAPPING))
         self.assertEqual(d["records"][0]["roles"][0]["status"], "new")
+
+
+
+class DetachOnly(DetachFixture):
+    """detach() without any master change in the same transaction (0.2.0
+    regression): the commit must be kept because detachments refer to it."""
+
+    def masters(self):
+        return {t: [tuple(r) for r in self.base.con.execute("SELECT * FROM %s ORDER BY 1" % t)]
+                for t in ("book", "person")}
+
+    def detach_b1(self):
+        eid = self.book("b1")
+        before = self.pointing(eid)
+        with self.base.transaction("detach only") as cid:
+            self.assertIsNotNone(self.base.detach("book", eid, reason="standalone"))
+        return eid, before, cid
+
+    def test_1_detach_only_commit_is_kept(self):
+        masters = self.masters()
+        eid, _, cid = self.detach_b1()
+        row = self.base.con.execute("SELECT * FROM commits WHERE id=?", (cid,)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["note"], "detach only")
+        self.assertEqual(self.base.head(), cid)
+        self.assertEqual([d["commit_id"] for d in self.base.detachments("book", eid)], [cid])
+        self.assertEqual(self.pointing(eid), ([], [], []))
+        self.assertEqual(self.masters(), masters)                 # no master change at all
+
+    def test_2_record_keeps_its_commit_after_unrelated_edit(self):
+        eid, _, cid = self.detach_b1()
+        with self.base.transaction("unrelated edit") as cid2:
+            self.base.update("book", self.book("b2"), {"title": "Emma (1815)"})
+        self.assertNotEqual(cid2, cid)
+        self.assertEqual([d["commit_id"] for d in self.base.detachments("book", eid)], [cid])
+        self.assertEqual(self.base.detachments(commit_id=cid2), [])
+        self.assertEqual(self.base.con.execute(
+            "SELECT note FROM commits WHERE id=?", (cid,)).fetchone()["note"], "detach only")
+
+    def test_3_revert_restores_without_master_change(self):
+        masters = self.masters()
+        eid, before, cid = self.detach_b1()
+        rid = self.base.revert(cid)
+        self.assertEqual(self.pointing(eid), before)               # links, baselines, relations
+        self.assertEqual(self.masters(), masters)                  # master values untouched
+        self.assertEqual(self.base.validate(), {})
+        self.assertEqual([(d["kind"], d["commit_id"]) for d in self.base.detachments("book", eid)],
+                         [("restore", rid), ("detach", cid)])
+        self.assertEqual(self.base.con.execute(
+            "SELECT kind FROM commits WHERE id=?", (rid,)).fetchone()["kind"], "revert")
+        self.assertEqual(self.base.con.execute(
+            "SELECT COUNT(*) FROM changes WHERE commit_id=?", (rid,)).fetchone()[0], 0)
+        # the restored baselines behave as before: same source again is a no-op
+        head = self.base.head()
+        self.base.commit(self.base.stage("shop", {"b1": {"title": "Dune", "price": "9"}}, MAPPING))
+        self.assertEqual(self.base.head(), head)
+
+    def test_4_exception_rolls_back_detach_and_record(self):
+        before = self.dump()
+        with self.assertRaises(ValueError):
+            with self.base.transaction("detach then fail"):
+                self.base.detach("book", self.book("b1"))
+                raise ValueError("boom")
+        self.assertEqual(self.dump(), before)
+
+    def test_5_truly_empty_transaction_is_discarded(self):
+        with self.base.transaction("lonely person"):
+            lonely = self.base.insert("person", {"name": "nobody points here"})
+        before = self.dump()
+        with self.base.transaction("nothing"):
+            pass
+        with self.base.transaction("detach with nothing to detach"):
+            self.assertIsNone(self.base.detach("person", lonely))
+        self.assertEqual(self.dump(), before)
+
+    def test_6_revert_refused_when_row_gone(self):
+        eid, _, cid = self.detach_b1()
+        with self.base.transaction("delete it later"):
+            self.base.delete("book", eid)
+        state = self.dump()
+        with self.assertRaises(RuntimeError) as cm:
+            self.base.revert(cid)
+        self.assertIn("no longer exists", str(cm.exception))
+        self.assertEqual(self.dump(), state)                       # nothing half-restored
 
 
 if __name__ == "__main__":

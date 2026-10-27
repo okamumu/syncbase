@@ -29,7 +29,7 @@ disappear from a full snapshot.
 
 ### `transaction(note="", kind="manual", batch_id=None, actor=None, commit=True)` *(context manager)*
 Group master changes into one commit. Yields the commit id; empty
-commits are discarded, errors roll everything back. **All manual writes
+commits (no master change and no detach/restore record) are discarded, errors roll everything back. **All manual writes
 must happen inside this.** With `commit=False` the final `con.commit()`
 is skipped, so the caller can inspect the written state and then
 `base.con.rollback()` (dry run) or commit itself.
@@ -92,6 +92,9 @@ Re-committing the same batch is a no-op. Returns
   values changed since (unless `force`).
 - `revert_change(change_id, force=False, note=None) -> new_commit_id` —
   same, but for a single row of `changes` instead of a whole commit.
+- `revert` of a commit that only detached (no master change) re-attaches
+  what was detached without touching master values; refused if the entity
+  no longer exists.
 - Both re-attach what was detached from a deleted row when they re-insert it
   (all-or-nothing: refused, even with `force`, if a link key, baseline or
   relation slot is taken by something else now). Undoing an insert deletes

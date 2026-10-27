@@ -200,7 +200,9 @@ class Base:
     def transaction(self, note="", kind="manual", batch_id=None, actor=None, commit=True):
         """Group master changes into one commit (spec 4.2).
 
-        Empty commits (no recorded change) are discarded on exit.  On error
+        Empty commits are discarded on exit: no recorded master change and
+        no detach/restore record (``detachments`` refer to the commit, so a
+        commit that only detached links is kept).  On error
         everything is rolled back.  With ``commit=False`` the final
         ``con.commit()`` is skipped, so the caller can inspect the written
         state and then roll back (dry run) or commit itself.
@@ -212,7 +214,9 @@ class Base:
         self.con.execute("UPDATE sync_context SET commit_id=? WHERE id=1", (cid,))
         try:
             yield cid
-            n = self.con.execute("SELECT COUNT(*) FROM changes WHERE commit_id=?", (cid,)).fetchone()[0]
+            n = self.con.execute(
+                "SELECT (SELECT COUNT(*) FROM changes WHERE commit_id=?)"
+                " + (SELECT COUNT(*) FROM detachments WHERE commit_id=?)", (cid, cid)).fetchone()[0]
             if not n:
                 self.con.execute("DELETE FROM commits WHERE id=?", (cid,))
             self.con.execute("UPDATE sync_context SET commit_id=NULL WHERE id=1")
