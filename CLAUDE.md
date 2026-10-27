@@ -32,5 +32,6 @@ Key mechanics that span files:
 - **Field policies**: `auto`, `source_wins`, `master_wins`, `manual`, `protected`; a `decide()`-confirmed value (in `field_decisions`) turns silent updates into conflicts.
 - **Export** (`export.py`): one-way; diffs are computed against the last *confirmed* run, `prepare_export` never moves that baseline, CSV output is guarded against formula injection.
 - **No history rewriting**: `revert` applies inverse changes as a *new* commit and refuses if values moved on since.
+- **Detach with a record** (`links.detach`, `delete(detach=True)`): management tables (links, baselines, relations) have no history triggers, so removing them off a deleted row is recorded in `detachments` under the current commit, and `revert` restores them all-or-nothing. Functions that join a caller's transaction must not call `con.commit()`.
 
 Master tables are the application's own schema; syncbase only requires an INTEGER pk and attaches triggers. SQL identifiers are interpolated via `q()` (quoting), values always via `?` parameters — keep that split.

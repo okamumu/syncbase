@@ -39,7 +39,8 @@ is skipped, so the caller can inspect the written state and then
 - `values(entity_type, entity_id) -> dict | None` — registered fields only (M1).
 - `insert(entity_type, values) -> entity_id`
 - `update(entity_type, entity_id, values)`
-- `delete(entity_type, entity_id)`
+- `delete(entity_type, entity_id, detach=False, reason="")` — with
+  `detach=True`, first `detach()` what points at the row (inside `transaction()`).
 - `head() -> int` — current database version (latest commit id).
 - `snapshot(reason="") -> filename` — copy the whole file to `backup_dir`.
 - `close()`
@@ -91,6 +92,10 @@ Re-committing the same batch is a no-op. Returns
   values changed since (unless `force`).
 - `revert_change(change_id, force=False, note=None) -> new_commit_id` —
   same, but for a single row of `changes` instead of a whole commit.
+- Both re-attach what was detached from a deleted row when they re-insert it
+  (all-or-nothing: refused, even with `force`, if a link key, baseline or
+  relation slot is taken by something else now). Undoing an insert deletes
+  the row with `detach=True`, so no link is left dangling.
 
 ## Linking (links.py)
 
@@ -99,6 +104,14 @@ Re-committing the same batch is a no-op. Returns
   create or repoint a link.
 - `unlink(source_id, external_key, role="")` — remove the link and its
   sync state.
+- `detach(entity_type, entity_id, reason="") -> detachment_id | None` —
+  inside `transaction()` only, never commits: save the entity's links,
+  their `sync_states` baselines and the relations from/to it in
+  `detachments` (kind `detach`, same commit), then remove them. Use before
+  deleting a row that is no longer valid, so `validate()` stays clean while
+  the past correspondence stays traceable; `revert` restores it.
+- `detachments(entity_type=None, entity_id=None, commit_id=None) -> list[dict]` —
+  detach/restore records, newest first (`payload` decoded).
 - `links_of(entity_type, entity_id) -> list[dict]`
 - `merge_entities(entity_type, keep, drop, note="")` — repoint links and
   decisions from `drop` to `keep`, delete `drop` (one commit).

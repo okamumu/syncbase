@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0 — 2026-10-28
+
+- **Detach with a record** (`links.detach`, `Base.detach`): inside a
+  transaction, save an entity's `entity_links`, their `sync_states`
+  baselines and the relations from/to it in the new management table
+  `detachments`, then remove them. It never commits, so it joins the
+  caller's transaction and is rolled back with it. `Base.delete(...,
+  detach=True)` does this before deleting the row; `validate()` stays clean.
+- **Restore on revert**: `revert` / `revert_change` re-attach what was
+  detached when they re-insert a deleted row, and record a `restore`.
+  All-or-nothing: refused (even with `force`) if a link key, baseline or
+  relation slot is now taken by something else.
+- **Behaviour change**: undoing an insert now deletes the row with
+  `detach=True`. Before, the link was left pointing at the missing row
+  (`validate()` reported it, and re-importing the record showed it as
+  deleted in the master); now re-importing creates it anew.
+- `detachments(...)`: read the detach/restore records.
+
 ## 0.1.3 — 2026-10-27
 
 - **Baseline fix (spec 4.4, 5.5)**: committing a batch no longer advances

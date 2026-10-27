@@ -35,7 +35,7 @@ from .merge import (AGREED, CONFLICT, DELETE, MASTER_KEPT, MISSING,
 from .staging import StaleView, Unresolved
 from .store import Base
 
-__version__ = "0.1.3"
+__version__ = "0.2.0"
 __all__ = ["Base", "StaleView", "Unresolved", "MISSING", "DELETE",
            "three_way", "three_way_field",
            "UNCHANGED", "NOT_PROVIDED", "MASTER_KEPT", "SOURCE_UPDATE",
@@ -58,6 +58,8 @@ Base.revert_change = _versioning.revert_change
 Base.match_candidates = _links.match_candidates
 Base.link = _links.link
 Base.unlink = _links.unlink
+Base.detach = _links.detach
+Base.detachments = _links.detachments
 Base.links_of = _links.links_of
 Base.merge_entities = _links.merge_entities
 Base.split_entity = _links.split_entity

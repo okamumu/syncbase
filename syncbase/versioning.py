@@ -109,7 +109,7 @@ def _apply_inverse(base, c, force, label):
         if not force and any(cur.get(f) != new.get(f) for f in new if f != e.pk):
             raise RuntimeError("row %s/%s changed since %s"
                                % (c["entity_type"], c["entity_id"], label))
-        base.delete(c["entity_type"], c["entity_id"])
+        base.delete(c["entity_type"], c["entity_id"], detach=True, reason=label)   # no dangling links
     elif c["op"] == "delete":
         if cur is not None and not force:
             raise RuntimeError("row %s/%s exists again" % (c["entity_type"], c["entity_id"]))
@@ -119,6 +119,9 @@ def _apply_inverse(base, c, force, label):
                 "INSERT INTO %s (%s) VALUES (%s)"
                 % (q(e.table), ", ".join(q(k) for k in cols), ", ".join("?" * len(cols))),
                 [old[k] for k in cols])
+            from .links import restore
+            if c["commit_id"] is not None:                # re-attach what was detached with the row
+                restore(base, c["commit_id"], c["entity_type"], c["entity_id"])
 
 
 def revert(base, commit_id, force=False, note=None):

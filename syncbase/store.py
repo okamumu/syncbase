@@ -79,6 +79,11 @@ CREATE TABLE IF NOT EXISTS judgements (
     a_type TEXT NOT NULL, a_id INTEGER NOT NULL, b_type TEXT NOT NULL, b_id INTEGER NOT NULL,
     verdict TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', compared TEXT,
     actor TEXT NOT NULL DEFAULT '', ts TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS detachments (
+    id INTEGER PRIMARY KEY, commit_id INTEGER, ts TEXT NOT NULL,
+    entity_type TEXT NOT NULL, entity_id INTEGER NOT NULL,
+    kind TEXT NOT NULL, ref INTEGER, reason TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS detachments_entity ON detachments (entity_type, entity_id);
 CREATE TABLE IF NOT EXISTS sync_context (id INTEGER PRIMARY KEY CHECK (id = 1), commit_id INTEGER);
 INSERT OR IGNORE INTO sync_context VALUES (1, NULL);
 """
@@ -254,8 +259,15 @@ class Base:
             % (q(e.table), ", ".join("%s=?" % q(c) for c in cols), q(e.pk)),
             [values[c] for c in cols] + [entity_id])
 
-    def delete(self, entity_type, entity_id):
+    def delete(self, entity_type, entity_id, detach=False, reason=""):
+        """Delete one master row.  With ``detach=True`` the links, sync
+        baselines and relations pointing at it are first detached with a
+        record (``links.detach``), so ``validate()`` stays clean and
+        ``revert`` can restore them.  Must then run inside ``transaction()``."""
         e = self.entities[entity_type]
+        if detach:
+            from .links import detach as _detach
+            _detach(self, entity_type, entity_id, reason=reason)
         self.con.execute("DELETE FROM %s WHERE %s=?" % (q(e.table), q(e.pk)), (entity_id,))
 
     # ------------------------------------------------------------ snapshot

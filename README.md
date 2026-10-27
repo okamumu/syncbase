@@ -92,7 +92,7 @@ A quick reference with signatures and return values is in
 |---|---|
 | input | `stage(source, records, mapping)` · `diff(batch)` · `conflicts(batch)` · `resolve(batch, decisions)` · `commit(batch, expected_head=None)` |
 | history | `history(entity_type, entity_id)` · `commits()` · `get_version(commit)` · `compare_versions(v1, v2)` · `revert(commit)` · `snapshot(reason)` |
-| linking | `match_candidates` · `link` · `unlink` · `links_of` · `merge_entities` · `split_entity` |
+| linking | `match_candidates` · `link` · `unlink` · `detach` · `detachments` · `links_of` · `merge_entities` · `split_entity` |
 | provenance | `provenance(entity_type, id, field)` · `decide(...)` (manually confirm a value) |
 | validation | `check(name, fn)` · `validate()` |
 | export | `export_profile` · `prepare_export` · `export_diff` · `confirm_export` · `export_history` · `compare_exports` |
@@ -114,6 +114,12 @@ string; `None` is NULL; `syncbase.DELETE` is an explicit clear instruction.
   (`StaleView`) — pass `expected_head=preview["head"]`.
 - `revert` applies the inverse as a *new* commit and refuses when the
   values moved on since (no history rewriting).
+- Deleting with `delete(..., detach=True)` takes the links, baselines and
+  relations off the row with a record in the same commit, so no live link
+  points at a missing entity; `revert` puts them back all-or-nothing, or
+  refuses if their place is taken. Tables whose rows get deleted should use
+  `INTEGER PRIMARY KEY AUTOINCREMENT` so a deleted id is never handed out
+  again (SQLite otherwise reuses the largest one).
 - CSV exports are one-way: diffs are computed against the last *confirmed*
   run; previews never move the baseline. Output is guarded against CSV
   formula injection.
